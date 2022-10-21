@@ -1,0 +1,19 @@
+{
+    "name": "template",
+    "version": "0.1.0",
+    "license": "UNLICENSED",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/elizabethprins/template.git"
+    },
+    "devDependencies": {
+        "core-js": "^3.25.2",
+        "elm": "^0.19.1-5",
+        "elm-format": "^0.8.5",
+        "elm-review": "^2.7.5",
+        "livereload": "^0.9.3",
+        "sass": "^1.55.0",
+        "serve": "^14.0.1",
+        "uglify-js": "^3.17.3"
+    }
+}

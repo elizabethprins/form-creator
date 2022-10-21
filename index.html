@@ -1,0 +1,20 @@
+<!DOCTYPE HTML>
+<html lang="en">
+    <head>
+        <title>Project template</title>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <link rel="stylesheet" href="/style.css">
+        <script src="/main.js"></script>
+    </head>
+
+    <body>
+        <div id="elm"></div>
+        <script>
+            var app = Elm.Main.init({
+                node: document.getElementById('elm'),
+                flags: { seed: Array.from(crypto.getRandomValues(new Uint32Array(1)))[0] }
+            });
+        </script>
+    </body>
+</html>

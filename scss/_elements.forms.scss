@@ -1,0 +1,81 @@
+.items {
+    gap: 1rem;
+    max-width: $small;
+    display: flex;
+    flex-direction: column;
+    background: $grey6;
+}
+
+.item {
+    padding: 0rem 1.5rem 1rem;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid $grey4;
+    border-radius: $radius;
+    background: $white;
+    cursor: pointer;
+
+    &.-dragged {
+        opacity: 0;
+
+        .item__handle,
+        .item__content {
+            pointer-events: none;
+        }
+    }
+
+    &.-ghost {
+        opacity: .8;
+    }
+
+    &.-editing {
+        padding-bottom: 0;
+        box-shadow: 5px 0 0 0 $blue inset;
+        cursor: default;
+    }
+}
+
+.item__handle {
+    width: 100%;
+    height: 1.5rem;
+    font-family: $monospace;
+    text-align: center;
+    cursor: move;
+    user-select: none;
+}
+
+.form-error {
+    color: $red;
+}
+
+.radio-options {
+    margin-top: .25em;
+    font-family: $sans;
+
+    li {
+        display: flex;
+        align-items: center;
+
+        div {
+            display: flex;
+        }
+
+        &:before {
+            content: "";
+            width: 1em;
+            height: 1em;
+            margin-right: .5em;
+            border: 1px solid $grey4;
+            border-radius: 50%;
+        }
+    }
+}
+
+.toolbar {
+    gap: .25rem;
+    padding: .5rem;
+    margin-top: .5rem;
+    margin-right: -1.5rem;
+    display: flex;
+    justify-content: flex-end;
+}
