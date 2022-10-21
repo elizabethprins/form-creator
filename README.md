@@ -3,6 +3,8 @@
 Work in progress, based on the Online Form Creator of Google Forms.
 Add, edit, and remove questions using  [List.Zipper](https://package.elm-lang.org/packages/wernerdegroot/listzipper/latest/), and reorder them using [DnDList](https://package.elm-lang.org/packages/annaghi/dnd-list/latest/).
 
+[Demo](https://splendid-axolotl-83c478.netlify.app/)
+
 ## Includes
 
 1. [Livereload](https://github.com/napcs/node-livereload)
