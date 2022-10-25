@@ -2,6 +2,8 @@ module FormFields exposing
     ( FormField
     , FormFields(..)
     , Mode(..)
+    , MultipleChoiceType(..)
+    , OpenType(..)
     , QuestionType(..)
     , add
     , addOption
@@ -15,7 +17,10 @@ module FormFields exposing
     , previous
     , radioField
     , remove
+    , removeFocus
     , removeOption
+    , setMultipleChoiceType
+    , setOpenType
     , textField
     , toList
     )
@@ -44,8 +49,18 @@ type alias FormField =
 
 
 type QuestionType
-    = Text
-    | Radio (FormFields ( UUID, String ))
+    = Open OpenType
+    | MultipleChoice MultipleChoiceType (FormFields ( UUID, String ))
+
+
+type OpenType
+    = Short
+    | Long
+
+
+type MultipleChoiceType
+    = Radio
+    | Checkbox
 
 
 type Mode
@@ -76,6 +91,18 @@ focus field formFields =
 
                 Just zipper_ ->
                     HasFocus zipper_
+
+
+removeFocus : FormFields a -> FormFields a
+removeFocus formFields =
+    case formFields of
+        NoFocus _ _ ->
+            formFields
+
+        HasFocus formFieldZipper ->
+            formFieldZipper
+                |> Zipper.first
+                |> (\a -> NoFocus (Zipper.current a) (Zipper.after a))
 
 
 add : UUID -> FormFields FormField -> FormFields FormField
@@ -150,11 +177,11 @@ focusOnOption option formFields =
                 Zipper.mapCurrent
                     (\f ->
                         case f.questionType of
-                            Text ->
+                            Open _ ->
                                 f
 
-                            Radio options ->
-                                { f | questionType = Radio <| focus option options }
+                            MultipleChoice multiType options ->
+                                { f | questionType = MultipleChoice multiType <| focus option options }
                     )
                     formFieldZipper
 
@@ -214,7 +241,7 @@ textField : UUID -> String -> FormField
 textField id string =
     { id = id
     , title = string
-    , questionType = Text
+    , questionType = Open Short
     }
 
 
@@ -222,7 +249,7 @@ radioField : UUID -> UUID -> String -> FormField
 radioField fieldId optionId string =
     { id = fieldId
     , title = string
-    , questionType = Radio (init ( optionId, "first option" ) [])
+    , questionType = MultipleChoice Radio (init ( optionId, "first option" ) [])
     }
 
 
@@ -296,15 +323,51 @@ updateOption updateFn formFields =
                 Zipper.mapCurrent
                     (\f ->
                         case f.questionType of
-                            Text ->
+                            Open _ ->
                                 f
 
-                            Radio options ->
+                            MultipleChoice multiType options ->
                                 let
                                     newOptions =
                                         updateFn options
                                 in
-                                { f | questionType = Radio newOptions }
+                                { f | questionType = MultipleChoice multiType newOptions }
+                    )
+                    formFieldZipper
+
+        NoFocus _ _ ->
+            formFields
+
+
+setOpenType : OpenType -> FormFields FormField -> FormFields FormField
+setOpenType openType formFields =
+    case formFields of
+        HasFocus formFieldZipper ->
+            HasFocus <|
+                Zipper.mapCurrent
+                    (\f -> { f | questionType = Open openType })
+                    formFieldZipper
+
+        NoFocus _ _ ->
+            formFields
+
+
+setMultipleChoiceType : MultipleChoiceType -> UUID -> FormFields FormField -> FormFields FormField
+setMultipleChoiceType multiType optionId formFields =
+    case formFields of
+        HasFocus formFieldZipper ->
+            HasFocus <|
+                Zipper.mapCurrent
+                    (\f ->
+                        { f
+                            | questionType =
+                                case f.questionType of
+                                    MultipleChoice _ options ->
+                                        MultipleChoice multiType options
+
+                                    Open _ ->
+                                        MultipleChoice multiType (init ( optionId, "first option" ) [])
+                        }
                     )
                     formFieldZipper
 

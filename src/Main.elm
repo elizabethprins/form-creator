@@ -1,8 +1,20 @@
 module Main exposing (Model, Msg(..), main)
 
 import Browser
+import Browser.Events
+import Dict exposing (Dict)
 import DnDList
-import FormFields exposing (FormField, FormFields, Mode(..), QuestionType(..), radioField, textField)
+import FormFields
+    exposing
+        ( FormField
+        , FormFields
+        , Mode(..)
+        , MultipleChoiceType(..)
+        , OpenType(..)
+        , QuestionType(..)
+        , radioField
+        , textField
+        )
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
@@ -125,7 +137,23 @@ system =
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
-    system.subscriptions model.dnd
+    Sub.batch
+        [ system.subscriptions model.dnd
+        , clickOutsideFormFields model.formFields
+        ]
+
+
+clickOutsideFormFields : FormFields FormField -> Sub Msg
+clickOutsideFormFields formFields =
+    case formFields of
+        FormFields.NoFocus _ _ ->
+            Sub.none
+
+        FormFields.HasFocus _ ->
+            Sub.batch
+                [ Browser.Events.onKeyUp (outside "formfields" RemoveFocus)
+                , Browser.Events.onClick (outside "formfields" RemoveFocus)
+                ]
 
 
 
@@ -158,8 +186,10 @@ init flags =
 
 
 type Msg
-    = DndMsg DnDList.Msg
+    = NoOp
+    | DndMsg DnDList.Msg
     | FocusOn FormField
+    | RemoveFocus
     | Add
     | Duplicate
     | Remove
@@ -167,12 +197,17 @@ type Msg
     | TextInput String
     | OptionInput String
     | AddOption
-    | RemoveOption
+    | RemoveOption ( UUID, String )
+    | SetOpenType OpenType
+    | SetMultipleChoiceType MultipleChoiceType
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
+        NoOp ->
+            ( model, Cmd.none )
+
         DndMsg msg_ ->
             let
                 ( dnd, formFieldsList ) =
@@ -210,6 +245,14 @@ update msg model =
             ( { model
                 | formFields =
                     FormFields.focus field model.formFields
+              }
+            , Cmd.none
+            )
+
+        RemoveFocus ->
+            ( { model
+                | formFields =
+                    FormFields.removeFocus model.formFields
               }
             , Cmd.none
             )
@@ -285,10 +328,31 @@ update msg model =
             , Cmd.none
             )
 
-        RemoveOption ->
+        RemoveOption option ->
             ( { model
                 | formFields =
-                    FormFields.removeOption model.formFields
+                    FormFields.removeOption <| FormFields.focusOnOption option model.formFields
+              }
+            , Cmd.none
+            )
+
+        SetOpenType openType ->
+            ( { model
+                | formFields =
+                    FormFields.setOpenType openType model.formFields
+              }
+            , Cmd.none
+            )
+
+        SetMultipleChoiceType multiType ->
+            let
+                ( optionId, newSeed ) =
+                    Random.step UUID.generator model.seed
+            in
+            ( { model
+                | formFields =
+                    FormFields.setMultipleChoiceType multiType optionId model.formFields
+                , seed = newSeed
               }
             , Cmd.none
             )
@@ -303,7 +367,7 @@ view model =
     { title = "Form"
     , body =
         [ main_ [ class "main" ]
-            [ section []
+            [ section [ id "formfields" ]
                 [ div [ class "items" ] <|
                     List.indexedMap (viewItem model.dnd) (FormFields.toList model.formFields)
                 , viewItemGhost model.dnd (FormFields.toList model.formFields)
@@ -384,6 +448,7 @@ viewContent ( mode, formField ) =
         Editing ->
             div []
                 [ viewEditingMode formField
+                , viewQuestionTypeSelect formField.questionType
                 , viewToolbar
                 ]
 
@@ -391,14 +456,31 @@ viewContent ( mode, formField ) =
 viewViewingMode : FormField -> Html Msg
 viewViewingMode formField =
     case formField.questionType of
-        Text ->
-            text formField.title
-
-        Radio options ->
+        Open openType ->
             div []
                 [ text formField.title
-                , viewOptionsList Viewing (FormFields.toList options)
+                , viewAnswerHint openType
                 ]
+
+        MultipleChoice multiType options ->
+            div []
+                [ text formField.title
+                , viewOptionsList Viewing multiType (FormFields.toList options)
+                ]
+
+
+viewAnswerHint : OpenType -> Html Msg
+viewAnswerHint openType =
+    let
+        hint =
+            case openType of
+                Short ->
+                    "Short answer text"
+
+                Long ->
+                    "Long answer text"
+    in
+    div [ class "open-answer-hint" ] [ span [] [ text hint ] ]
 
 
 viewToolbar : Html Msg
@@ -412,61 +494,112 @@ viewToolbar =
 
 viewEditingMode : FormField -> Html Msg
 viewEditingMode formField =
+    let
+        label =
+            toLabel formField.questionType
+    in
     case formField.questionType of
-        Text ->
-            formFieldConfig
-                { toMsg = TextInput
-                , id = UUID.toString formField.id
-                , label = "Title for text question"
-                , value = formField.title
-                }
-                |> viewTextField
-
-        Radio options ->
+        Open openType ->
             div []
                 [ formFieldConfig
                     { toMsg = TextInput
                     , id = UUID.toString formField.id
-                    , label = "Title for single choice question"
+                    , label = label
                     , value = formField.title
                     }
                     |> viewTextField
-                , viewOptionsList Editing (FormFields.toList options)
-                , button [ clickMsg AddOption ] [ text "add option" ]
+                , viewAnswerHint openType
+                ]
+
+        MultipleChoice multiType options ->
+            div []
+                [ formFieldConfig
+                    { toMsg = TextInput
+                    , id = UUID.toString formField.id
+                    , label = label
+                    , value = formField.title
+                    }
+                    |> viewTextField
+                , viewOptionsList Editing multiType (FormFields.toList options)
+                , button [ clickMsg AddOption ] [ text "+ add option" ]
                 ]
 
 
-viewOptionsList : Mode -> List ( Mode, ( UUID, String ) ) -> Html Msg
-viewOptionsList currentMode options =
+viewOptionsList : Mode -> MultipleChoiceType -> List ( Mode, ( UUID, String ) ) -> Html Msg
+viewOptionsList currentMode multiType options =
     let
-        viewRadioItem ( mode, ( id, opt ) ) =
+        viewRadioItem ( _, ( id, opt ) ) =
             case currentMode of
                 Viewing ->
                     text opt
 
                 Editing ->
-                    if mode == Editing then
-                        div []
-                            [ formFieldConfig
-                                { toMsg = OptionInput
-                                , id = UUID.toString id
-                                , label = "Single choice option"
-                                , value = opt
-                                }
-                                |> viewTextField
-                            , button [ clickMsg RemoveOption ] [ text "x" ]
-                            ]
-
-                    else
-                        text opt
+                    div []
+                        [ formFieldConfig
+                            { toMsg = OptionInput
+                            , id = UUID.toString id
+                            , label = toOptionLabel multiType
+                            , value = opt
+                            }
+                            |> viewTextField
+                        , button [ clickMsg (RemoveOption ( id, opt )) ] [ text "x" ]
+                        ]
     in
-    ul [ class "radio-options" ] <|
-        List.map
+    ul
+        [ classList
+            [ ( "multiple-choice-options", True )
+            , ( "-radio", multiType == Radio )
+            ]
+        ]
+        (List.map
             (\( mode, opt ) ->
                 li [ onClick (FocusOnOption opt) ]
                     [ viewRadioItem ( mode, opt ) ]
             )
             options
+        )
+
+
+viewQuestionTypeSelect : QuestionType -> Html Msg
+viewQuestionTypeSelect questionType =
+    let
+        options =
+            Dict.fromList
+                [ ( shortAnswerTitle, SetOpenType Short )
+                , ( longAnswerTitle, SetOpenType Long )
+                , ( radioAnswerTitle, SetMultipleChoiceType Radio )
+                , ( checkboxAnswerTitle, SetMultipleChoiceType Checkbox )
+                ]
+
+        decoder =
+            Decode.at [ "target", "value" ] Decode.string
+
+        toMsg value =
+            case Dict.get value options of
+                Just msg ->
+                    msg
+
+                Nothing ->
+                    NoOp
+    in
+    select
+        [ class "question-type-select"
+        , on "change" (Decode.map toMsg decoder)
+        ]
+        (List.map
+            (\content ->
+                let
+                    isCurrent =
+                        toQuestionTypeTitle questionType == content
+                in
+                option
+                    [ selected isCurrent
+                    , value content
+                    ]
+                    [ text content ]
+            )
+            (Dict.keys options)
+        )
 
 
 
@@ -522,6 +655,48 @@ formFieldConfig { id, label, value, toMsg } =
     }
 
 
+toQuestionTypeTitle : QuestionType -> String
+toQuestionTypeTitle questionType =
+    case questionType of
+        Open Short ->
+            shortAnswerTitle
+
+        Open Long ->
+            longAnswerTitle
+
+        MultipleChoice Radio _ ->
+            radioAnswerTitle
+
+        MultipleChoice Checkbox _ ->
+            checkboxAnswerTitle
+
+
+toLabel : QuestionType -> String
+toLabel questionType =
+    case questionType of
+        Open Short ->
+            "Question with a short answer"
+
+        Open Long ->
+            "Question with a longer answer"
+
+        MultipleChoice Radio _ ->
+            "Multiple choice question with a single answer"
+
+        MultipleChoice Checkbox _ ->
+            "Multiple choice question with more than one answer"
+
+
+toOptionLabel : MultipleChoiceType -> String
+toOptionLabel multipleChoiceType =
+    case multipleChoiceType of
+        Radio ->
+            "Option for multiple choice with a single answer"
+
+        Checkbox ->
+            "Option for multiple choice with more than one answer"
+
+
 applyErrorLabel : a -> { b | errorLabel : a } -> { b | errorLabel : a }
 applyErrorLabel errorLabel cfg =
     { cfg | errorLabel = errorLabel }
@@ -534,6 +709,26 @@ applyHasError hasError cfg =
 
 
 --- HELPERS
+
+
+shortAnswerTitle : String
+shortAnswerTitle =
+    "Short answer"
+
+
+longAnswerTitle : String
+longAnswerTitle =
+    "Paragraph"
+
+
+radioAnswerTitle : String
+radioAnswerTitle =
+    "Multiple choice"
+
+
+checkboxAnswerTitle : String
+checkboxAnswerTitle =
+    "Checkboxes"
 
 
 viewIf : Bool -> (() -> Html Msg) -> Html Msg
@@ -553,3 +748,34 @@ clickMsg msg =
 alwaysStopPropagation : Msg -> ( Msg, Bool )
 alwaysStopPropagation msg =
     ( msg, True )
+
+
+outside : String -> Msg -> Decode.Decoder Msg
+outside htmlId msg =
+    Decode.field "target" (decodeIsOutside htmlId)
+        |> Decode.andThen
+            (\isOutside ->
+                if isOutside then
+                    Decode.succeed msg
+
+                else
+                    Decode.fail "is inside target"
+            )
+
+
+decodeIsOutside : String -> Decode.Decoder Bool
+decodeIsOutside htmlId =
+    Decode.oneOf
+        [ Decode.field "id" Decode.string
+            |> Decode.andThen
+                (\id ->
+                    if id == htmlId then
+                        Decode.succeed False
+
+                    else
+                        Decode.fail "check parentNode"
+                )
+        , Decode.lazy
+            (\_ -> Decode.field "parentNode" (decodeIsOutside htmlId))
+        , Decode.succeed True
+        ]
